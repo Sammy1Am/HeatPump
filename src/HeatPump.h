@@ -84,6 +84,13 @@ struct heatpumpFunctionCodes {
   int code[MAX_FUNCTION_CODE_COUNT];
 };
 
+class UARTProvider {
+  public:
+    virtual int available() = 0;
+    virtual int read() = 0;
+    virtual size_t write(uint8_t c) = 0;
+};
+
 class heatpumpFunctions  {
   private:
     byte raw[MAX_FUNCTION_CODE_COUNT];
@@ -190,7 +197,8 @@ class HeatPump
 
     heatpumpFunctions functions;
   
-    HardwareSerial * _HardSerial {nullptr};
+    //HardwareSerial * _HardSerial {nullptr};
+    UARTProvider * _UARTProvider {nullptr};
     unsigned long lastSend;
     bool waitForRead;
     int infoMode;
@@ -234,11 +242,12 @@ class HeatPump
     const int RQST_PKT_STANDBY   = 5;
 
     // general
-    HeatPump();
-    bool connect(HardwareSerial *serial);
-    bool connect(HardwareSerial *serial, int bitrate);
-    bool connect(HardwareSerial *serial, int rx, int tx);
-    bool connect(HardwareSerial *serial, int bitrate, int rx, int tx);
+    HeatPump(UARTProvider *uart);
+    static void initHardwareSerial(HardwareSerial *serial);
+    static void initHardwareSerial(HardwareSerial *serial, int bitrate);
+    static void initHardwareSerial(HardwareSerial *serial, int rx, int tx);
+    static void initHardwareSerial(HardwareSerial *serial, int bitrate, int rx, int tx);
+    bool connect();
     bool update();
     void sync(byte packetType = PACKET_TYPE_DEFAULT);
     void enableExternalUpdate();

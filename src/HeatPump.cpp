@@ -69,7 +69,8 @@ bool operator!=(const heatpumpTimers& lhs, const heatpumpTimers& rhs) {
 
 // Constructor /////////////////////////////////////////////////////////////////
 
-HeatPump::HeatPump() {
+HeatPump::HeatPump(UARTProvider *uart) {
+  _UARTProvider = uart;
   lastSend = 0;
   infoMode = 0;
   lastRecv = millis() - (PACKET_SENT_INTERVAL_MS * 10);
@@ -84,43 +85,42 @@ HeatPump::HeatPump() {
 
 // Public Methods //////////////////////////////////////////////////////////////
 
-bool HeatPump::connect(HardwareSerial *serial) {
-  return connect(serial, -1, -1);
+void HeatPump::initHardwareSerial(HardwareSerial *serial) {
+  return initHardwareSerial(serial, -1, -1);
 }
 
-bool HeatPump::connect(HardwareSerial *serial, int bitrate) {
-	return connect(serial, bitrate, -1, -1);
+void HeatPump::initHardwareSerial(HardwareSerial *serial, int bitrate) {
+	return initHardwareSerial(serial, bitrate, -1, -1);
 }
 
-bool HeatPump::connect(HardwareSerial *serial, int rx, int tx) {
-	return connect(serial, 0, rx, tx);
+void HeatPump::initHardwareSerial(HardwareSerial *serial, int rx, int tx) {
+	return initHardwareSerial(serial, 0, rx, tx);
 }
 
-bool HeatPump::connect(HardwareSerial *serial, int bitrate, int rx, int tx) {
-  if(serial != NULL) {
-    _HardSerial = serial;
-  }
-  bool retry = false;
+void HeatPump::initHardwareSerial(HardwareSerial *serial, int bitrate, int rx, int tx) {
+  //bool retry = false;
   if(bitrate == 0) {
     bitrate = 2400;
-    retry = true;
+    //retry = true;
   }
-  connected = false;
+  
   if (rx >= 0 && tx >= 0) {
 #if defined(ESP32)    
-    _HardSerial->begin(bitrate, SERIAL_8E1, rx, tx);
+    serial->begin(bitrate, SERIAL_8E1, rx, tx);
 #else
-    _HardSerial->begin(bitrate, SERIAL_8E1);
+    serial->begin(bitrate, SERIAL_8E1);
 #endif    
   } else {
-    _HardSerial->begin(bitrate, SERIAL_8E1);
+    serial->begin(bitrate, SERIAL_8E1);
   }
+}
+
+bool HeatPump::connect() {
+  connected = false;
+  
   if(onConnectCallback) {
     onConnectCallback();
   }
-  
-  // settle before we start sending packets
-  delay(2000);
 
   // send the CONNECT packet twice - need to copy the CONNECT packet locally
   byte packet[CONNECT_LEN];
@@ -129,9 +129,10 @@ bool HeatPump::connect(HardwareSerial *serial, int bitrate, int rx, int tx) {
   writePacket(packet, CONNECT_LEN);
   while(!canRead()) { delay(10); }
   int packetType = readPacket();
-  if(packetType != RCVD_PKT_CONNECT_SUCCESS && retry){
-	  return connect(serial, 9600, rx, tx);
-  }
+  //TODO Figure out fixing baudrate automatically?
+  // if(packetType != RCVD_PKT_CONNECT_SUCCESS && retry){
+	//   return connect(serial, 9600, rx, tx);
+  // }
   return packetType == RCVD_PKT_CONNECT_SUCCESS;
   //}
 }
@@ -171,7 +172,8 @@ bool HeatPump::update() {
 
 void HeatPump::sync(byte packetType) {
   if((!connected) || (millis() - lastRecv > (PACKET_SENT_INTERVAL_MS * 10))) {
-    connect(NULL);
+    connect();
+    //TODO What's the goal here?
   }
   else if(canRead()) {
     readAllPackets();
@@ -527,7 +529,7 @@ void HeatPump::createInfoPacket(byte *packet, byte packetType) {
 
 void HeatPump::writePacket(byte *packet, int length) {
   for (int i = 0; i < length; i++) {
-     _HardSerial->write((uint8_t)packet[i]);
+     _UARTProvider->write((uint8_t)packet[i]);
   }
 
   if(packetCallback) {
@@ -547,10 +549,10 @@ int HeatPump::readPacket() {
   
   waitForRead = false;
 
-  if(_HardSerial->available() > 0) {
+  if(_UARTProvider->available() > 0) {
     // read until we get start byte 0xfc
-    while(_HardSerial->available() > 0 && !foundStart) {
-      header[0] = _HardSerial->read();
+    while(_UARTProvider->available() > 0 && !foundStart) {
+      header[0] = _UARTProvider->read();
       if(header[0] == HEADER[0]) {
         foundStart = true;
         delay(100); // found that this delay increases accuracy when reading, might not be needed though
@@ -563,7 +565,7 @@ int HeatPump::readPacket() {
     
     //read header
     for(int i=1;i<5;i++) {
-      header[i] =  _HardSerial->read();
+      header[i] =  _UARTProvider->read();
     }
     
     //check header
@@ -571,11 +573,11 @@ int HeatPump::readPacket() {
       dataLength = header[4];
       
       for(int i=0;i<dataLength;i++) {
-        data[i] = _HardSerial->read();
+        data[i] = _UARTProvider->read();
       }
   
       // read checksum byte
-      data[dataLength] = _HardSerial->read();
+      data[dataLength] = _UARTProvider->read();
   
       // sum up the header bytes...
       for (int i = 0; i < INFOHEADER_LEN; i++) {
@@ -745,7 +747,7 @@ int HeatPump::readPacket() {
 }
 
 void HeatPump::readAllPackets() {
-  while (_HardSerial->available() > 0) {
+  while (_UARTProvider->available() > 0) {
     readPacket();
   }
 }
